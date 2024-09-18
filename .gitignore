@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 .DS_Store
 
+aging-env
+large-aging-model.h5
