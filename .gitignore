@@ -163,3 +163,5 @@ cython_debug/
 aging-env
 large-aging-model.h5
 example-videos
+*tmp*
+*inter*
