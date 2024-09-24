@@ -11,6 +11,14 @@ from models.generator import Generator
 from torchsr.models import ninasr_b0
 from torchvision.transforms.functional import to_pil_image, to_tensor
 from math import ceil
+import logging
+from tqdm import tqdm
+from halo import Halo
+import time
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
 
 # Constants
 COLOR_MAP = {
@@ -51,6 +59,7 @@ def load_model():
     model = Generator()
     model.load_state_dict(torch.load('models/large-aging-model.h5', map_location=device))
     model.to(device)
+    logger.info(f'Model loaded onto device: {device}')
     return model, device
 
 generator_model, device = load_model()
@@ -62,16 +71,16 @@ square_size = -1
 def setup_processing(image):
     global sr_model, square_size
 
-    print("Setting up processing...")
+    logger.info("Setting up processing...")
     # Get dimensions
     width, height = image.size
-    print("(width, height):", (width, height))
+    logger.info(f"(width, height): {width}, {height}")
     # Determine square crop size
     square_size = min(width, height)
-    print("Square size:", square_size)
+    logger.info(f"Square size: {square_size}")
     # Determine the scale factor
     sr_factor = ceil(square_size / 512)
-    print("SR Factor:", sr_factor)
+    logger.info(f"SR Factor: {sr_factor}")
 
     # Load appropriate SR model
     if sr_factor > 1: 
@@ -79,7 +88,7 @@ def setup_processing(image):
 
 # Function to perform scaling (upscaling or downscaling)
 def scale_square(image, size):
-    if image.size[0] < size and sr_model is not None and False:
+    if image.size[0] < size and sr_model is not None:
         save_intermediate_image(image, "upscaled_pre.jpg")
         # Upscaling: Super resolution followed by downscaling
         image_array = np.array(image) / 255.0  # Scale to [0, 1]
@@ -178,27 +187,32 @@ def process_video(input_video_path, input_age, output_age, output_video_path):
     fps = video_capture.get(cv2.CAP_PROP_FPS)
     frame_count = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    for idx in range(frame_count):
-        ret, frame = video_capture.read()
-        if not ret:
-            print(f"Reached end of video at frame {idx}")
-            break
+    logger.info(f"Processing video: {input_video_path}")
+    start_time = time.time()
+    with tqdm(total=frame_count, desc='Processing Frames') as pbar:
+        for idx in range(frame_count):
+            ret, frame = video_capture.read()
+            if not ret:
+                logger.warning(f"Reached end of video at frame {idx}")
+                break
 
-        image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        if idx == 0: 
-            setup_processing(image)
-            output_video = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, image.size)
+            image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            if idx == 0: 
+                setup_processing(image)
+                output_video = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, image.size)
 
-        processed_frame = process_image(image, input_age, output_age, idx)
-        save_intermediate_image(processed_frame, f"frame_{idx}_final_result.png")
+            processed_frame = process_image(image, input_age, output_age, idx)
+            save_intermediate_image(processed_frame, f"frame_{idx}_final_result.png")
 
-        output_video.write(cv2.cvtColor(np.array(processed_frame), cv2.COLOR_RGBA2BGR))
-        print(f"Processed frame {idx + 1}/{frame_count}")
+            output_video.write(cv2.cvtColor(np.array(processed_frame), cv2.COLOR_RGBA2BGR))
+            pbar.update(1)
+            elapsed_time = time.time() - start_time
+            estimated_remaining_time = ((elapsed_time / (idx + 1)) * (frame_count - (idx + 1)))
 
     video_capture.release()
     output_video.release()
-    print(f"Video saved at {output_video_path}")
-    print(f"Intermediary results saved at {intermediate_dir}")
+    logger.info(f"Video saved at {output_video_path}")
+    logger.info(f"Intermediary results saved at {intermediate_dir}")
 
 # Process a single image file
 def process_image_file(input_image_path, input_age, output_age, output_image_path):
@@ -206,7 +220,7 @@ def process_image_file(input_image_path, input_age, output_age, output_image_pat
     setup_processing(image)
     final_image = process_image(image, input_age, output_age, 0)
     final_image.save(output_image_path)
-    print(f"Image saved at {output_image_path}")
+    logger.info(f"Image saved at {output_image_path}")
 
 # Main function to run from command-line
 if __name__ == "__main__":
@@ -218,13 +232,12 @@ if __name__ == "__main__":
     if not os.path.exists(intermediate_dir):
         os.makedirs(intermediate_dir)
 
-    if os.path.exists(input_image_path):
+    if os.path.exists(input_image_path) and False:
         process_image_file(input_image_path, input_age, output_age, output_image_path)
 
     video_path_stub = "example-videos/founder_short_big_cropped"
     input_video_path = video_path_stub + ".mov"
     output_video_path = video_path_stub + "_out.mp4"
-    # input_video_path = "example-videos/input_example_video.mov"
 
     if os.path.exists(input_video_path):
         process_video(input_video_path, input_age, output_age, output_video_path)
