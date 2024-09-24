@@ -8,6 +8,17 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import mediapipe as mp
 from models.generator import Generator
+from torchsr.datasets import Div2K
+from torchsr.models import ninasr_b0
+from torchvision.transforms.functional import to_pil_image, to_tensor
+
+# Div2K dataset
+# dataset = Div2K(root="./datasets", scale=2)
+
+# Get the first image in the dataset (High-Res and Low-Res)
+# hr, lr = dataset[0]
+
+
 
 # Constants
 COLOR_MAP = {
@@ -52,6 +63,24 @@ def load_model():
 
 generator_model, device = load_model()
 
+# Download a pretrained NinaSR model
+sr_model = ninasr_b0(scale=2, pretrained=True)
+
+def enhance_resolution(image):
+    image = np.array(image) / 255.0  # Scale to [0, 1]
+    print(image)
+    
+    # Convert the image to a tensor and ensure it is in float32
+    lr_t = to_tensor(image).unsqueeze(0).float()  # Ensure it's float32
+    
+    # Forward pass through the super-resolution model
+    sr_t = sr_model(lr_t)
+    
+    # Convert the tensor back to PIL image format
+    sr = to_pil_image(sr_t.squeeze(0).clamp(0, 1))  # Ensure the output is clamped to valid range [0, 1]
+    return sr
+
+
 # Utility to save intermediary images
 def save_image(image, path):
     if isinstance(image, np.ndarray):
@@ -95,12 +124,29 @@ def process_image(image, input_age, output_age, frame_idx, intermediary_dir):
     with torch.no_grad():
         model_output = generator_model(input_tensor.unsqueeze(0))
 
-    processed_output = model_output.squeeze(0).cpu().permute(1, 2, 0).numpy() * 255
+    processed_output = model_output.squeeze(0).cpu().permute(1, 2, 0).numpy()
+    processed_output = np.clip(processed_output * 255, 0, 255).astype(np.uint8)
+    print("Processed output")
+    print(processed_output)
+
     save_image(processed_output * 3, os.path.join(intermediary_dir, f"frame_{frame_idx}_ai_output.png"))
 
-    blended_image = np.clip((processed_output + np.array(resized_image)), 0, 255).astype('uint8')
-    final_image = np.array(Image.fromarray(blended_image).resize(image.size))
+    # Apply super-resolution to the processed output
+    sr_output = enhance_resolution(processed_output)
+    save_image(sr_output, os.path.join(intermediary_dir, f"frame_{frame_idx}_super.png"))
 
+    # Create blended final image with soft edges
+    blended_image = np.clip((sr_output + np.array(resized_image)), 0, 255).astype('uint8')
+    final_image = Image.fromarray(blended_image).resize(image.size)
+    
+    # Create a soft edge effect
+    soft_edge_mask = np.zeros((final_image.size[1], final_image.size[0]), dtype=np.uint8)
+    cv2.circle(soft_edge_mask, (final_image.size[0] // 2, final_image.size[1] // 2), 20, (255), thickness=-1)
+    soft_edge_mask = cv2.GaussianBlur(soft_edge_mask, (21, 21), 0)
+    soft_edge_mask = np.expand_dims(soft_edge_mask, axis=2)
+
+    final_image = np.clip(final_image * (soft_edge_mask / 255) + np.array(resized_image) * (1 - soft_edge_mask / 255), 0, 255).astype('uint8')
+    
     save_image(final_image, os.path.join(intermediary_dir, f"frame_{frame_idx}_final_result.png"))
     return final_image
 
@@ -160,14 +206,14 @@ if __name__ == "__main__":
     if os.path.exists(input_image_path):
         process_image_file(input_image_path, input_age, output_age, output_image_path)
 
-    # input_video_path = "example-videos/input_example_video.mov"
-    # output_video_path = "example-videos/output_example_video.mp4"
-
-    # if os.path.exists(input_video_path):
-    #     process_video(input_video_path, input_age, output_age, output_video_path)
-
-    input_video_path = "example-videos/input_example_warum.mov"
-    output_video_path = "example-videos/output_example_warum.mp4"
+    input_video_path = "example-videos/input_example_video.mov"
+    output_video_path = "example-videos/output_example_video.mp4"
 
     if os.path.exists(input_video_path):
         process_video(input_video_path, input_age, output_age, output_video_path)
+
+    # input_video_path = "example-videos/input_example_warum.mov"
+    # output_video_path = "example-videos/output_example_warum.mp4"
+
+    # if os.path.exists(input_video_path):
+    #     process_video(input_video_path, input_age, output_age, output_video_path)
