@@ -173,6 +173,7 @@ intermediate_dir = "intermediate_results"
 
 # Utility to save intermediary images
 def save_intermediate_image(image, path):
+    return 
     path = os.path.join(intermediate_dir, path)
     if isinstance(image, np.ndarray):
         cv2.imwrite(path, image)
@@ -182,7 +183,7 @@ def save_intermediate_image(image, path):
         raise ValueError("Input should be either a numpy ndarray or a PIL Image")
 
 # Process video frame by frame
-def process_video(input_video_path, input_age, output_age, output_video_path):
+def process_video(input_video_path, input_age, output_age, output_video_path, progressive_aging=True):
     video_capture = cv2.VideoCapture(input_video_path)
     fps = video_capture.get(cv2.CAP_PROP_FPS)
     frame_count = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -201,7 +202,13 @@ def process_video(input_video_path, input_age, output_age, output_video_path):
                 setup_processing(image)
                 output_video = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, image.size)
 
-            processed_frame = process_image(image, input_age, output_age, idx)
+            # Calculate the interpolated age for the current frame
+            if progressive_aging:
+                frame_age = input_age + (output_age - input_age) * (idx / (frame_count - 1))
+            else:
+                frame_age = output_age  # Fixed age for all frames if not progressive aging
+
+            processed_frame = process_image(image, input_age, frame_age, idx)
             save_intermediate_image(processed_frame, f"frame_{idx}_final_result.png")
 
             output_video.write(cv2.cvtColor(np.array(processed_frame), cv2.COLOR_RGBA2BGR))
@@ -235,7 +242,7 @@ if __name__ == "__main__":
     if os.path.exists(input_image_path) and False:
         process_image_file(input_image_path, input_age, output_age, output_image_path)
 
-    video_path_stub = "example-videos/founder_short_big_cropped"
+    video_path_stub = "example-videos/founder_medium_big_cropped"
     input_video_path = video_path_stub + ".mov"
     output_video_path = video_path_stub + "_out.mp4"
 
