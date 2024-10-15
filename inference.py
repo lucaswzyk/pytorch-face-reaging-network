@@ -3,7 +3,6 @@ import cv2
 import torch
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
-import torchvision.transforms as transforms
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import mediapipe as mp
@@ -13,7 +12,6 @@ from torchvision.transforms.functional import to_pil_image, to_tensor
 from math import ceil
 import logging
 from tqdm import tqdm
-from halo import Halo
 import time
 
 # Configure logging
