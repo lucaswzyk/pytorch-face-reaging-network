@@ -171,7 +171,6 @@ intermediate_dir = "intermediate_results"
 
 # Utility to save intermediary images
 def save_intermediate_image(image, path):
-    return 
     path = os.path.join(intermediate_dir, path)
     if isinstance(image, np.ndarray):
         cv2.imwrite(path, image)
@@ -227,22 +226,25 @@ def process_image_file(input_image_path, input_age, output_age, output_image_pat
     final_image.save(output_image_path)
     logger.info(f"Image saved at {output_image_path}")
 
-# Main function to run from command-line
-if __name__ == "__main__":
-    input_image_path = "example-images/input_example_img.png"
-    output_image_path = "example-images/output_example_img.png"
-    input_age = 20
-    output_age = 80
-
+def process_image_main(input_image_path="example-images/input_example_img.png",
+                       output_image_path="example-images/output_example_img.png",
+                       input_age=20, output_age=80):
     if not os.path.exists(intermediate_dir):
         os.makedirs(intermediate_dir)
 
-    if os.path.exists(input_image_path) and False:
+    if os.path.exists(input_image_path):
         process_image_file(input_image_path, input_age, output_age, output_image_path)
 
-    video_path_stub = "example-videos/founder_medium_big_cropped"
-    input_video_path = video_path_stub + ".mov"
-    output_video_path = video_path_stub + "_out.mp4"
+def process_video_main(input_video_path="example-videos/founder_medium_big_cropped.mov",
+                       output_video_path="example-videos/founder_medium_big_cropped_out.mp4",
+                       input_age=20, output_age=80):
+    if not os.path.exists(intermediate_dir):
+        os.makedirs(intermediate_dir)
 
     if os.path.exists(input_video_path):
         process_video(input_video_path, input_age, output_age, output_video_path)
+
+# Main function to run from command-line
+if __name__ == "__main__":
+    process_image_main()
+    process_video_main()
