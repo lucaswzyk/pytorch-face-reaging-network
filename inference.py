@@ -234,6 +234,8 @@ def process_image_main(input_image_path="example-images/input_example_img.png",
 
     if os.path.exists(input_image_path):
         process_image_file(input_image_path, input_age, output_age, output_image_path)
+    else:
+        print("File not found.")
 
 def process_video_main(input_video_path="example-videos/founder_medium_big_cropped.mov",
                        output_video_path="example-videos/founder_medium_big_cropped_out.mp4",
@@ -243,6 +245,8 @@ def process_video_main(input_video_path="example-videos/founder_medium_big_cropp
 
     if os.path.exists(input_video_path):
         process_video(input_video_path, input_age, output_age, output_video_path)
+    else:
+        print("File not found.")
 
 # Main function to run from command-line
 if __name__ == "__main__":
