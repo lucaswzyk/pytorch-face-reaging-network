@@ -13,6 +13,8 @@ from math import ceil
 import logging
 from tqdm import tqdm
 import time
+from torch.utils.data import DataLoader, TensorDataset
+from torch.cuda.amp import autocast
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
@@ -51,7 +53,7 @@ def create_segmenter():
 
 segmenter = create_segmenter()
 
-# Load model
+# Load model onto the correct device
 def load_model():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = Generator()
@@ -61,7 +63,6 @@ def load_model():
     return model, device
 
 generator_model, device = load_model()
-
 sr_model = None
 square_size = -1
 
@@ -70,34 +71,25 @@ def setup_processing(image):
     global sr_model, square_size
 
     logger.info("Setting up processing...")
-    # Get dimensions
     width, height = image.size
     logger.info(f"(width, height): {width}, {height}")
-    # Determine square crop size
     square_size = min(width, height)
-    logger.info(f"Square size: {square_size}")
-    # Determine the scale factor
     sr_factor = ceil(square_size / 512)
     logger.info(f"SR Factor: {sr_factor}")
 
-    # Load appropriate SR model
-    if sr_factor > 1: 
-        sr_model = ninasr_b0(scale=sr_factor, pretrained=True)
+    if sr_factor > 1:
+        sr_model = ninasr_b0(scale=sr_factor, pretrained=True).to(device)
 
-# Function to perform scaling (upscaling or downscaling)
+# Function to scale images with SR model if needed
 def scale_square(image, size):
     if image.size[0] < size and sr_model is not None:
-        save_intermediate_image(image, "upscaled_pre.jpg")
-        # Upscaling: Super resolution followed by downscaling
-        image_array = np.array(image) / 255.0  # Scale to [0, 1]
-        lr_t = to_tensor(image_array).unsqueeze(0).float()  # Ensure it's float32
-        sr_t = sr_model(lr_t)
+        image_array = np.array(image) / 255.0
+        lr_t = to_tensor(image_array).unsqueeze(0).float().to(device)
+        with torch.no_grad():
+            sr_t = sr_model(lr_t)
         image = to_pil_image(sr_t.squeeze(0).clamp(0, 1))
 
-    image = image.resize((size, size), Image.LANCZOS)
-    save_intermediate_image(image, "upscaled_post.jpg")
-
-    return image
+    return image.resize((size, size), Image.LANCZOS)
 
 # Crop the center square from a frame
 def crop_center_square(frame):
@@ -107,6 +99,7 @@ def crop_center_square(frame):
     y_start = (height - size) // 2
     return frame.crop((x_start, y_start, x_start + size, y_start + size))
 
+# Add the processed square back onto the original frame
 def add_center_back_on(original_frame, processed_square, feather_radius=10, corner_radius=50, margin=20):
     width, height = original_frame.size
     square_x = (width - square_size) // 2
@@ -125,7 +118,7 @@ def add_center_back_on(original_frame, processed_square, feather_radius=10, corn
 
     return original_frame
 
-# Function to generate age map based on face and body segmentation
+# Generate age map using MediaPipe segmentation
 def generate_age_map(image, input_age, output_age):
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(image))
     segmentation_result = segmenter.segment(mp_image)
@@ -139,30 +132,25 @@ def generate_age_map(image, input_age, output_age):
     age_map = np.full((512, 512), input_age / 100)
     age_map[(category_mask == 2) | (category_mask == 3)] = output_age / 100
 
-    age_map_tensor = torch.tensor(age_map).unsqueeze(0).to(device)
-    return age_map_tensor, colorized_mask
+    return torch.tensor(age_map).unsqueeze(0).to(device), colorized_mask
 
-# Process single image (Pic2Pic)
+# Process a single image
 def process_image(image, input_age, output_age, frame_idx):
-    # Crop and resize the image
     cropped_image = crop_center_square(image)
     resized_image = scale_square(cropped_image, 512)
 
     input_image = IMAGE_TRANSFORM(image=np.array(resized_image))['image'] / 255
-
-    age_map1 = torch.full((1, 512, 512), input_age / 100)
+    age_map1 = torch.full((1, 512, 512), input_age / 100).to(device)
     age_map2, colorized_mask = generate_age_map(resized_image, input_age, output_age)
-
-    save_intermediate_image(colorized_mask, f"frame_{frame_idx}_segmentation.png")
 
     input_tensor = torch.cat((input_image, age_map1, age_map2), dim=0).float().to(device)
 
-    with torch.no_grad():
+    with torch.no_grad(), autocast():
         model_output = generator_model(input_tensor.unsqueeze(0))
 
     processed_output = model_output.squeeze(0).cpu().permute(1, 2, 0).numpy() * 255
     blended_image = np.clip((processed_output + np.array(resized_image)), 0, 255).astype('uint8')
-    save_intermediate_image(blended_image, f"frame_{frame_idx}_blended.png")
+
     final_square = scale_square(Image.fromarray(blended_image), square_size)
 
     return add_center_back_on(image, final_square)
