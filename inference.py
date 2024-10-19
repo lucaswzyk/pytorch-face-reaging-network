@@ -129,21 +129,28 @@ def generate_age_map(image, input_age, output_age):
     for region, color in COLOR_MAP.items():
         colorized_mask[category_mask == region] = color
 
-    age_map = np.full((512, 512), input_age / 100)
+    # Create the age map tensor and move it to the same device
+    age_map = np.full((512, 512), input_age / 100, dtype=np.float32)
     age_map[(category_mask == 2) | (category_mask == 3)] = output_age / 100
 
-    return torch.tensor(age_map).unsqueeze(0).to(device), colorized_mask
+    age_map_tensor = torch.tensor(age_map).unsqueeze(0).to(device) 
+    return age_map_tensor, colorized_mask
 
 # Process a single image
 def process_image(image, input_age, output_age, frame_idx):
     cropped_image = crop_center_square(image)
     resized_image = scale_square(cropped_image, 512)
 
+    # Convert input image to tensor and move to the device
     input_image = IMAGE_TRANSFORM(image=np.array(resized_image))['image'] / 255
+    input_image = input_image.to(device)
+
+    # Generate the age maps and move them to the device
     age_map1 = torch.full((1, 512, 512), input_age / 100).to(device)
     age_map2, colorized_mask = generate_age_map(resized_image, input_age, output_age)
 
-    input_tensor = torch.cat((input_image, age_map1, age_map2), dim=0).float().to(device)
+    # Concatenate the tensors and move to the device
+    input_tensor = torch.cat((input_image, age_map1, age_map2), dim=0).float()
 
     with torch.no_grad(), autocast():
         model_output = generator_model(input_tensor.unsqueeze(0))
