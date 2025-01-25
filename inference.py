@@ -177,9 +177,10 @@ def process_image(image, input_age, output_age, frame_idx):
     input_image = IMAGE_TRANSFORM(image=np.array(resized_image))["image"] / 255
 
     age_map1 = torch.full((1, 512, 512), input_age / 100)
-    age_map2, colorized_mask = generate_age_map(resized_image, input_age, output_age)
+    # age_map2, colorized_mask = generate_age_map(resized_image, input_age, output_age)
+    age_map2 = torch.full((1, 512, 512), output_age / 100)
 
-    save_intermediate_image(colorized_mask, f"frame_{frame_idx}_segmentation.png")
+    # save_intermediate_image(colorized_mask, f"frame_{frame_idx}_segmentation.png")
 
     input_tensor = (
         torch.cat((input_image, age_map1, age_map2), dim=0).float().to(device)
@@ -275,7 +276,7 @@ def process_image_file(input_image_path, input_age, output_age, output_image_pat
 
 # Main function to run from command-line
 if __name__ == "__main__":
-    input_image_path = "example-images/input_example_img.png"
+    input_image_path = "faces/lisa_website.png"
     output_image_path = "example-images/output_example_img.png"
     input_age = 20
     output_age = 80
@@ -286,9 +287,9 @@ if __name__ == "__main__":
     if os.path.exists(input_image_path) and False:
         process_image_file(input_image_path, input_age, output_age, output_image_path)
 
-    video_path_stub = "example-videos/founder_medium_big_cropped"
+    video_path_stub = "faces/lisa_tracking"
     input_video_path = video_path_stub + ".mov"
     output_video_path = video_path_stub + "_out.mp4"
 
-    if os.path.exists(input_video_path) and False:
+    if os.path.exists(input_video_path):
         process_video(input_video_path, input_age, output_age, output_video_path)
